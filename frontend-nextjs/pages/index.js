@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
 import SlotGrid from "../components/SlotGrid";
-import { fetchAvailableSlots, fetchLots } from "../lib/api";
+import { fetchAvailableSlots, fetchLots, fetchVehicles } from "../lib/api";
 
 export default function HomePage() {
   const [lots, setLots] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [slots, setSlots] = useState([]);
   const [selectedLot, setSelectedLot] = useState("");
   const [selectedVehicle, setSelectedVehicle] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchLots()
-      .then(setLots)
+    Promise.all([fetchLots(), fetchVehicles()])
+      .then(([lotsData, vehiclesData]) => {
+        setLots(lotsData);
+        setVehicles(vehiclesData);
+      })
       .catch((err) => setError(err.message));
   }, []);
 
@@ -20,12 +26,15 @@ export default function HomePage() {
       setError("Please select a parking lot first.");
       return;
     }
+    setLoading(true);
     try {
       setError("");
       const parsed = await fetchAvailableSlots(selectedLot);
       setSlots(parsed);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -52,26 +61,38 @@ export default function HomePage() {
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label htmlFor="vehicle">Vehicle ID: </label>
-        <input
+        <label htmlFor="vehicle">Vehicle: </label>
+        <select
           id="vehicle"
-          type="number"
-          placeholder="e.g. 1"
           value={selectedVehicle}
           onChange={(e) => setSelectedVehicle(e.target.value)}
-        />
+        >
+          <option value="">Select vehicle</option>
+          {vehicles.map((vehicle) => (
+            <option key={vehicle.id} value={vehicle.id}>
+              {vehicle.number_plate}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <button onClick={loadSlots}>Load Available Slots</button>
+      <button onClick={loadSlots} disabled={loading}>
+        {loading ? "Loading..." : "Load Available Slots"}
+      </button>
 
-      {error ? <p style={{ color: "red" }}>{error}</p> : null}
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      {success && <p style={{ color: "green" }}>{success}</p>}
 
-      <h3 style={{ marginTop: 24 }}>Slots</h3>
-      <SlotGrid
-        slots={slots}
-        selectedVehicle={selectedVehicle}
-        fetchSlots={loadSlots}
-      />
+      <h3 style={{ marginTop: 24 }}>Available Slots</h3>
+      {loading ? (
+        <p>Loading slots...</p>
+      ) : (
+        <SlotGrid
+          slots={slots}
+          selectedVehicle={selectedVehicle}
+          fetchSlots={loadSlots}
+        />
+      )}
     </main>
   );
 }

@@ -31,6 +31,11 @@ func main() {
 	}
 	defer db.Close()
 
+	// Ping the database to ensure connection
+	if err := db.Ping(); err != nil {
+		log.Fatal("Failed to ping database:", err)
+	}
+
 	http.HandleFunc("/active-bookings", func(w http.ResponseWriter, r *http.Request) {
 		activeBookingsHandler(w, r, db)
 	})
@@ -51,6 +56,17 @@ func getDSN() string {
 }
 
 func activeBookingsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	// Set CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Query only active bookings (end_time IS NULL)
 	rows, err := db.Query(`
 		SELECT b.id, v.number_plate, s.number, l.name, b.start_time::text
 		FROM parking_booking b
@@ -61,7 +77,8 @@ func activeBookingsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		ORDER BY b.start_time DESC
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Query error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -70,16 +87,34 @@ func activeBookingsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows.Next() {
 		var row ActiveBooking
 		if err := rows.Scan(&row.BookingID, &row.NumberPlate, &row.SlotNumber, &row.LotName, &row.StartTime); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("Scan error: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		result = append(result, row)
+	}
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		log.Printf("Rows error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	respondJSON(w, result)
 }
 
 func occupancyHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	// Set CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Count occupied slots per lot using FILTER
 	rows, err := db.Query(`
 		SELECT l.id, l.name, COUNT(s.id) FILTER (WHERE s.is_occupied = true) AS occupied_count
 		FROM parking_parkinglot l
@@ -88,7 +123,8 @@ func occupancyHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		ORDER BY l.id
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Query error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -97,10 +133,17 @@ func occupancyHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows.Next() {
 		var row OccupancyRow
 		if err := rows.Scan(&row.LotID, &row.LotName, &row.OccupiedSlots); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("Scan error: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		result = append(result, row)
+	}
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		log.Printf("Rows error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	respondJSON(w, result)
